@@ -36,6 +36,6 @@ It is mainly just for fun and learning, but ideally it will also become my defau
 Implement various solutions and profile memory & performance to compare.
 
 ### References:
-https://web.eecs.utk.edu/~azh/blog/challengingprojects.html
-https://ecc-comp.blogspot.com/2015/05/a-brief-glance-at-how-5-text-editors.html
-http://texteditors.org/cgi-bin/wiki.pl?DesigningTextEditors
+- https://web.eecs.utk.edu/~azh/blog/challengingprojects.html
+- https://ecc-comp.blogspot.com/2015/05/a-brief-glance-at-how-5-text-editors.html
+- http://texteditors.org/cgi-bin/wiki.pl?DesigningTextEditors
