@@ -1,15 +1,37 @@
 {
 	"version": "2.0.0",
 	"tasks": [
-		{
+		{ // Compile on Windows
 			"type": "cppbuild",
 			"label": "C/C++: g++.exe build active file",
 			"command": "C:\\msys64\\mingw64\\bin\\g++.exe",
 			"args": [
+				"-IC:\\PDCurses-3.9",
 				"-g",
 				"${workspaceFolder}\\*.cpp",
+				"C:\\PDCurses-3.9\\wincon\\pdcurses.a",
 				"-o",
-				"${workspaceFolder}\\tekst.exe"
+				"${workspaceFolder}\\bin\\tekst.exe"
+			],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [
+				"$gcc"
+			],
+			"group": "build",
+			"detail": "compiler: C:\\msys64\\mingw64\\bin\\g++.exe"
+		},
+		{ // Compile on Linux
+			"type": "cppbuild",
+			"label": "C/C++: g++ build active file",
+			"command": "/usr/bin/g++",
+			"args": [
+				"-g",
+				"${workspaceFolder}/*.cpp",
+				"-o",
+				"${workspaceFolder}/bin/tekst",
+				"-lncurses"
 			],
 			"options": {
 				"cwd": "${workspaceFolder}"
@@ -21,7 +43,7 @@
 				"kind": "build",
 				"isDefault": true
 			},
-			"detail": "compiler: C:\\msys64\\mingw64\\bin\\g++.exe"
+			"detail": "compiler: /usr/bin/g++"
 		}
 	]
 }

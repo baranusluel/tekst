@@ -39,3 +39,4 @@ Implement various solutions and profile memory & performance to compare.
 - https://web.eecs.utk.edu/~azh/blog/challengingprojects.html
 - https://ecc-comp.blogspot.com/2015/05/a-brief-glance-at-how-5-text-editors.html
 - http://texteditors.org/cgi-bin/wiki.pl?DesigningTextEditors
+- http://www.catch22.net/tuts/neatpad/neatpad-overview
