@@ -1,7 +1,16 @@
 # tekst
 tekst is my *work-in-progress* implementation of a fast, minimal, cross-platform text editor.
 
-It is mainly just for fun and learning, but ideally it will also become my default tool for quick edits (i.e. for anything not requiring an IDE or formatting).
+It is mostly just for fun and learning, but ideally it should eventually become my default tool for quick edits (i.e. anything not requiring an IDE or formatting).
+
+## Building
+tekst aims to be cross-platform, and is actively tested on Windows 10 and Ubuntu Linux (WSL).
+
+For text-based UI functionality in the terminal, the Unix build uses ncurses and the Windows build uses PDCurses (header include path and library linkage must be setup for local environment).
+
+The source can be built with g++ (see .vscode/tasks.json for build arguments). On Windows, the author uses the Mingw-w64 distribution of the compiler.
+
+The project is developed in VSCode with the official "C/C++" and "Remote - WSL" extensions.
 
 ---
 ## Planning
@@ -9,7 +18,7 @@ It is mainly just for fun and learning, but ideally it will also become my defau
 ### Goals
 - Fast (native)
 - Minimal
-- Modular/cross-platform (with separate UI and editor engine)
+- Modular & cross-platform (with separate UI and editor engine)
 
 ### Desired Features
 - Movable text cursor (with persistent position memory)
