@@ -1,4 +1,4 @@
-#include <iostream>
+#include <algorithm>
 #include <curses.h>
 
 #define ctrl(x)           ((x) & 0x1f)
