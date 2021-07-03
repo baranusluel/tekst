@@ -1,9 +1,13 @@
 #include <algorithm>
 #include <curses.h>
 
-#define ctrl(x)           ((x) & 0x1f)
+#include "Buffer.h"
+
+#define ctrl(x)             ((x) & 0x1f)
 
 int main (int argc, char* argv[]) {
+    std::unique_ptr<Buffer> b = Buffer::createBuffer(static_cast<BufferType>(0));
+
     initscr();
     raw();
     keypad(stdscr, TRUE);
