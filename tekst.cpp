@@ -6,25 +6,27 @@
 #include "Utils.h"
 
 // Flags
-#define DEBUG               1 // TODO: Add cmd argument for debug flag
+/// TODO: Add cmd argument for debug flag
+#define DEBUG 1
 
 // While in curses terminal mode can't print to std::cout so keeping
 // a tmp stream and printing at termination.
 // Variable is extern declared in Utils.h for global usage.
 std::ostringstream debugLog;
 
-#define ctrl(x)             ((x) & 0x1f)
+// Macro for checking CTRL + KEY presses
+#define ctrl(x) ((x) & 0x1f)
 
+// Displays desired text line from file in target row
 void displayLine(int fileLineNum, int displayRow, Buffer* b) {
     // Get line from buffer in memory
     std::string line = b->getLine(fileLineNum);
-    // Deleting carriage returns because curses makes it overwrite text
-    size_t CR = line.find('\r');
-    if (CR != std::string::npos)
-        line.erase(CR, 1);
-    mvaddstr(displayRow, 0, line.c_str()); // TODO: Add second argument as COLS?
+    /// TODO: Add second argument as COLS?
+    mvaddstr(displayRow, 0, line.c_str());
 }
 
+// Cleanup for terminating application.
+// Stops curses mode, prints given message and debug log.
 void dumpAndExit(std::string msg) {
     endwin();
     if (DEBUG)
@@ -39,8 +41,8 @@ int main (int argc, char* argv[]) {
     }
     debugLog << "Opening file: " << argv[1] << std::endl;
     
-    std::unique_ptr<Buffer> b;
-    // TODO: Add cmd argument for buffer type
+    std::unique_ptr<Buffer> b; // Owned reference to text buffer
+    /// TODO: Add cmd argument for buffer type
     BufferType bType = static_cast<BufferType>(0);
     debugLog << "Buffer type: " << Buffer::bufferTypeToString(bType) << std::endl;
     try {
@@ -50,13 +52,17 @@ int main (int argc, char* argv[]) {
         return 0;
     }
 
+    // Setup curses mode
     initscr();
     raw();
     keypad(stdscr, TRUE);
     noecho();
 
+    // Enable vertical scrolling
     scrollok(stdscr, TRUE);
-    setscrreg(1, LINES - 2); // TODO: Update on resize
+    // Scrolling region excludes header and footer rows
+    /// TODO: Update on resize
+    setscrreg(1, LINES - 2);
 
     // Draw window chrome
     attron(A_BOLD);
@@ -69,7 +75,7 @@ int main (int argc, char* argv[]) {
     int scrollOffset = 0;
     move(row, col);
 
-    // Display text from read file
+    // Display text from read file in visible rows
     for (int i = 0; i < LINES - 2; ++i) {
         displayLine(i, row + i, b.get());
     }
@@ -81,24 +87,21 @@ int main (int argc, char* argv[]) {
     while (ch != ctrl('c')) { // Exit code
         switch (ch) {
             case KEY_BACKSPACE:
-            case KEY_LEFT:
-                move(row, col = std::max(col - 1, 0));
-                if (ch == KEY_BACKSPACE) {
-                    b->delChar(row - 1, col); // TODO: Refactor magic number offsets
-                    delch();
-                }
-                // Refreshing in particular cases instead of after entire switch statement because
-                // in default case echochar already includes a refresh (faster than addch + refresh).
-                refresh();
-                break;
+                // If cursor at leftmost position, backspace has no effect
+                if (col == 0) break;
+                // Otherwise move left, and flow into KEY_DC case below to delete char
+                move(row, --col);
+                // No break
             case KEY_DC:
+                /// TODO: Refactor magic number offsets
                 b->delChar(row - 1, col);
                 delch();
-                refresh();
+                break;
+            case KEY_LEFT:
+                move(row, col = std::max(col - 1, 0));
                 break;
             case KEY_RIGHT:
                 move(row, col = std::min(col + 1, COLS - 1));
-                refresh();
                 break;
             case KEY_UP:
                 if (row == 1) {
@@ -111,7 +114,6 @@ int main (int argc, char* argv[]) {
                     row--;
                 }
                 move(row, col);
-                refresh();
                 break;
             case KEY_DOWN:
                 if (row == LINES - 2) {
@@ -122,15 +124,13 @@ int main (int argc, char* argv[]) {
                     row++;
                 }
                 move(row, col);
-                refresh();
                 break;
             case KEY_HOME:
                 move(row, col = 0);
-                refresh();
                 break;
             case KEY_END:
+                /// TODO: This should only go to end of line (delimiter)
                 move(row, col = COLS - 1);
-                refresh();
                 break;
             case ctrl('s'):
                 try {
@@ -143,10 +143,10 @@ int main (int argc, char* argv[]) {
             default:
                 insch(ch);
                 b->insertChar(ch, row - 1, col);
-                move(row, col = std::min(col + 1, COLS - 1)); // TODO: Refactor with KEY_RIGHT case
-                refresh();
-                // getyx(curscr, row, col);
+                /// TODO: Refactor with KEY_RIGHT case
+                move(row, col = std::min(col + 1, COLS - 1));
         }
+        refresh();
         ch = getch();
     }
 
