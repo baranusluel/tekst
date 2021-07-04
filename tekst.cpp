@@ -24,7 +24,6 @@ std::vector<size_t> lineLengths;
 // Displays desired text line from file in target row.
 // Note that this method moves the cursor.
 void displayLine(int fileLineNum, int displayRow, Buffer* b) {
-    /// TODO: Make cursor temporarily invisible when scrolling, etc. to prevent flickering
     // Get line from buffer in memory
     std::string line = b->getLine(fileLineNum);
     /// TODO: Limit number of characters according to COLS?
@@ -121,6 +120,7 @@ int main (int argc, char* argv[]) {
                 delch();
                 // If cursor is at end of line, deleting linebreak
                 if (col == lineLengths[row - 1] - 1) {
+                    curs_set(0); // Hide cursor during operations to avoid flickering
                     deleteln(); // Deletes next row and shifts everything up
                     // Delete entry for current row from lineLengths, it will be readded by displayLine
                     lineLengths.erase(lineLengths.begin() + row - 1);
@@ -131,6 +131,7 @@ int main (int argc, char* argv[]) {
                     // Display line that scrolled into view from bottom
                     displayLine(LINES - 3 + scrollOffset, LINES - 3, b.get());
                     move(row, col);
+                    curs_set(1);
                 } else {
                     lineLengths[row - 1]--;
                 }
@@ -144,6 +145,7 @@ int main (int argc, char* argv[]) {
             case KEY_UP:
                 if (row == 1) {
                     if (scrollOffset > 0) {
+                        curs_set(0); // Hide cursor during operations to avoid flickering
                         scrl(-1);
                         scrollOffset--;
                         // Delete entry from end of table because only tracking visible lines
@@ -156,9 +158,11 @@ int main (int argc, char* argv[]) {
                     row--;
                 }
                 move(row, col = std::min(colGoal, std::max((int)lineLengths[row - 1] - 1, 0)));
+                curs_set(1);
                 break;
             case KEY_DOWN:
                 if (row == LINES - 2) {
+                    curs_set(0); // Hide cursor during operations to avoid flickering
                     scrl(1);
                     scrollOffset++;
                     // Delete entry from start of table because only tracking visible lines
@@ -171,6 +175,7 @@ int main (int argc, char* argv[]) {
                 }
                 /// TODO: Shouldn't be able to go down into empty space
                 move(row, col = std::min(colGoal, std::max((int)lineLengths[row - 1] - 1, 0)));
+                curs_set(1);
                 break;
             case KEY_HOME:
                 move(row, colGoal = col = 0);
@@ -190,6 +195,7 @@ int main (int argc, char* argv[]) {
                 insch(ch); // Insert typed character on screen
                 b->insertChar(ch, row - 1, col); // Insert character in buffer
                 if (ch == '\n') {
+                    curs_set(0); // Hide cursor during operations to avoid flickering
                     // New length of current line is wherever linebreak was added
                     lineLengths[row - 1] = col + 1;
                     // Move cursor to start of next row
@@ -200,6 +206,7 @@ int main (int argc, char* argv[]) {
                     move(row, col);
                     // Delete entry from end of table because only tracking visible lines
                     lineLengths.erase(lineLengths.end() - 1);
+                    curs_set(1);
                 } else {
                     // Move cursor right when character typed
                     move(row, colGoal = col = std::min(col + 1, COLS - 1));
