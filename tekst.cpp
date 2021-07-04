@@ -100,22 +100,31 @@ int main (int argc, char* argv[]) {
                 if (col == 0) {
                     // If not first line of text, then delete EOL of previous line
                     if (row > 1) {
-                        /// TODO: Need to know length of line
+                        move(--row, col = lineLengths[row - 2] - 1);
+                    } else {
+                        break;
                     }
-                    break;
+                } else {
+                    // Otherwise move left, and flow into KEY_DC case below to delete char
+                    move(row, --col);
                 }
-                // Otherwise move left, and flow into KEY_DC case below to delete char
-                move(row, --col);
                 // No break
             case KEY_DC:
                 /// TODO: Refactor magic number offsets
                 b->delChar(row - 1, col);
                 delch();
-                // Need to know length of line
-                if (inch() & A_CHARTEXT == '\n' /*doesn't work*/) {
-                    /// TODO: Update lineLengths
-                    deleteln();
+                // If cursor is at end of line, deleting linebreak
+                if (col == lineLengths[row - 1] - 1) {
+                    deleteln(); // Deletes next row and shifts everything up
+                    // Delete entry for current row from lineLengths, it will be readded by displayLine
+                    lineLengths.erase(lineLengths.begin() + row - 1);
+                    // Delete entry for the deleted row from lineLengths
+                    lineLengths.erase(lineLengths.begin() + row - 1);
+                    // Display updated (concatenated) line
                     displayLine(scrollOffset + row - 1, row, b.get());
+                    // Display line that scrolled into view from bottom
+                    displayLine(LINES - 3 + scrollOffset, LINES - 3, b.get());
+                    move(row, col);
                 } else {
                     lineLengths[row - 1]--;
                 }
