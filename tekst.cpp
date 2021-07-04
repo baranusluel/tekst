@@ -15,14 +15,21 @@ std::ostringstream debugLog;
 
 #define ctrl(x)             ((x) & 0x1f)
 
-void displayLine(int lineNum, Buffer* b) {
+void displayLine(int fileLineNum, int displayRow, Buffer* b) {
     // Get line from buffer in memory
-    std::string line = b->getLine(lineNum);
+    std::string line = b->getLine(fileLineNum);
     // Deleting carriage returns because curses makes it overwrite text
     size_t CR = line.find('\r');
     if (CR != std::string::npos)
         line.erase(CR, 1);
-    addstr(line.c_str()); // TODO: Add second argument as COLS?
+    mvaddstr(displayRow, 0, line.c_str()); // TODO: Add second argument as COLS?
+}
+
+void dumpAndExit(std::string msg) {
+    endwin();
+    if (DEBUG)
+        std::cout << debugLog.str();
+    std::cout << msg << std::endl;
 }
 
 int main (int argc, char* argv[]) {
@@ -39,9 +46,7 @@ int main (int argc, char* argv[]) {
     try {
         b = Buffer::createBuffer(bType, argv[1]);
     } catch (std::string msg) {
-        if (DEBUG)
-            std::cout << debugLog.str();
-        std::cout << msg << std::endl;
+        dumpAndExit(msg);
         return 0;
     }
 
@@ -54,8 +59,10 @@ int main (int argc, char* argv[]) {
     setscrreg(1, LINES - 2); // TODO: Update on resize
 
     // Draw window chrome
+    attron(A_BOLD);
     addstr("tekst by Baran Usluel\n");
     mvaddstr(LINES-1, 0, argv[1]);
+    attroff(A_BOLD);
     // Default row is after header
     int row = 1;
     int col = 0;
@@ -64,7 +71,7 @@ int main (int argc, char* argv[]) {
 
     // Display text from read file
     for (int i = 0; i < LINES - 2; ++i) {
-        displayLine(i, b.get());
+        displayLine(i, row + i, b.get());
     }
     move(row, col);
     refresh();
@@ -90,7 +97,7 @@ int main (int argc, char* argv[]) {
                     if (scrollOffset > 0) {
                         scrl(-1);
                         scrollOffset--;
-                        displayLine(scrollOffset, b.get());
+                        displayLine(scrollOffset, row, b.get());
                     }
                 } else {
                     row--;
@@ -102,7 +109,7 @@ int main (int argc, char* argv[]) {
                 if (row == LINES - 2) {
                     scrl(1);
                     scrollOffset++;
-                    displayLine(LINES - 3 + scrollOffset, b.get());
+                    displayLine(LINES - 3 + scrollOffset, row, b.get());
                 } else {
                     row++;
                 }
@@ -117,6 +124,14 @@ int main (int argc, char* argv[]) {
                 move(row, col = COLS - 1);
                 refresh();
                 break;
+            case ctrl('s'):
+                try {
+                    b->save();
+                } catch (std::string msg) {
+                    dumpAndExit(msg);
+                    return 0;
+                }
+                break;
             default:
                 echochar(ch);
                 getyx(curscr, row, col);
@@ -124,9 +139,6 @@ int main (int argc, char* argv[]) {
         ch = getch();
     }
 
-    endwin();
-
-    if (DEBUG)
-        std::cout << debugLog.str();
+    dumpAndExit("");
     return 0;
 }

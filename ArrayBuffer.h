@@ -12,6 +12,7 @@ class ArrayBuffer : public Buffer {
     public:
         ArrayBuffer(char* filename);
         std::string getLine(uint lineNum);
+        void save();
     private:
         std::string fileMemory;
 };

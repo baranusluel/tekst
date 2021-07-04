@@ -1,10 +1,14 @@
 #include "ArrayBuffer.h"
 
+#include <fstream>
 #include <sstream>
 #include "Utils.h"
 
 ArrayBuffer::ArrayBuffer(char* filename) {
-    fileStream.open(filename);
+    this->filename = filename;
+
+    // Open file for reading
+    std::ifstream fileStream(filename);
     if (!fileStream.is_open()) {
         throw std::string("Unable to open file: ") + filename;
     }
@@ -20,12 +24,14 @@ ArrayBuffer::ArrayBuffer(char* filename) {
     // This will be unmanageably large for huge files.
     fileMemory.reserve(length * 2);
 
-    // Read file line by line and append to array.
+    // Read file line by line and append to array in memory.
     std::string line;
     while (getline(fileStream, line)) {
         fileMemory.insert(fileMemory.end(), line.begin(), line.end());
         fileMemory.push_back('\n'); // TODO: Preserve original EOL
     }
+
+    fileStream.close();
 }
 
 std::string ArrayBuffer::getLine(uint lineNum) {
@@ -40,4 +46,13 @@ std::string ArrayBuffer::getLine(uint lineNum) {
         getline(memoryStream, line);
     } while (lineCnt++ < lineNum && memoryStream.good());
     return line + (line.length() ? "\n" : ""); // TODO: Preserve original EOL
+}
+
+void ArrayBuffer::save() {
+    std::ofstream fileStream(filename, std::ofstream::trunc);
+    if (!fileStream.is_open()) {
+        throw std::string("Unable to write to file: ") + filename;
+    }
+    fileStream << fileMemory;
+    fileStream.close();
 }
