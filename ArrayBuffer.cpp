@@ -34,18 +34,43 @@ ArrayBuffer::ArrayBuffer(char* filename) {
     fileStream.close();
 }
 
+void ArrayBuffer::getLineBounds(uint lineNum, size_t* beginP, size_t* endP) {
+    uint lineCount = 0;
+    size_t begin = 0;
+    size_t end = 0;
+
+    do {
+        begin = end > 0 ? end + 1 : 0;
+        end = fileMemory.find('\n', begin);
+        if (end == std::string::npos) {
+            if (lineCount < lineNum) {
+                begin = fileMemory.length();
+            }
+            break;
+        }
+    } while (lineCount++ < lineNum);
+
+    *beginP = begin;
+    *endP = end;
+}
+
 std::string ArrayBuffer::getLine(uint lineNum) {
     // Get n-th line from text file's representation in memory.
     // Since stored as a contiguous array, have to stream line by line
     // which is inefficient but is an intrinsic weakness of this buffer
     // implementation that would require added complexity to improve.
-    std::istringstream memoryStream(fileMemory);
-    std::string line;
-    uint lineCnt = 0;
-    do {
-        getline(memoryStream, line);
-    } while (lineCnt++ < lineNum && memoryStream.good());
-    return line + (line.length() ? "\n" : ""); // TODO: Preserve original EOL
+
+    size_t begin, end;
+    getLineBounds(lineNum, &begin, &end);
+    return fileMemory.substr(begin, end - begin + 1);
+
+    // std::istringstream memoryStream(fileMemory);
+    // std::string line;
+    // uint lineCnt = 0;
+    // do {
+    //     getline(memoryStream, line);
+    // } while (lineCnt++ < lineNum && memoryStream.good());
+    // return line + (line.length() ? "\n" : ""); // TODO: Preserve original EOL
 }
 
 void ArrayBuffer::save() {
@@ -55,4 +80,22 @@ void ArrayBuffer::save() {
     }
     fileStream << fileMemory;
     fileStream.close();
+}
+
+void ArrayBuffer::delChar(int line, int col) {
+    // TODO: Check bounds
+    size_t begin, end;
+    getLineBounds(line, &begin, &end);
+    if (col > end - begin)
+        return;
+    fileMemory.erase(begin + col, 1);
+}
+
+void ArrayBuffer::insertChar(char c, int line, int col) {
+    // TODO: Check bounds
+    size_t begin, end;
+    getLineBounds(line, &begin, &end);
+    if (col > end - begin)
+        return;
+    fileMemory.insert(fileMemory.begin() + begin + col, c);
 }

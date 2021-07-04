@@ -13,6 +13,9 @@ class ArrayBuffer : public Buffer {
         ArrayBuffer(char* filename);
         std::string getLine(uint lineNum);
         void save();
+        void delChar(int line, int col);
+        void insertChar(char c, int line, int col);
     private:
         std::string fileMemory;
+        void getLineBounds(uint lineNum, size_t* beginP, size_t* endP);
 };

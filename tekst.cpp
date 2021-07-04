@@ -83,9 +83,17 @@ int main (int argc, char* argv[]) {
             case KEY_BACKSPACE:
             case KEY_LEFT:
                 move(row, col = std::max(col - 1, 0));
-                if (ch == KEY_BACKSPACE) delch();
+                if (ch == KEY_BACKSPACE) {
+                    b->delChar(row - 1, col); // TODO: Refactor magic number offsets
+                    delch();
+                }
                 // Refreshing in particular cases instead of after entire switch statement because
                 // in default case echochar already includes a refresh (faster than addch + refresh).
+                refresh();
+                break;
+            case KEY_DC:
+                b->delChar(row - 1, col);
+                delch();
                 refresh();
                 break;
             case KEY_RIGHT:
@@ -133,8 +141,11 @@ int main (int argc, char* argv[]) {
                 }
                 break;
             default:
-                echochar(ch);
-                getyx(curscr, row, col);
+                insch(ch);
+                b->insertChar(ch, row - 1, col);
+                move(row, col = std::min(col + 1, COLS - 1)); // TODO: Refactor with KEY_RIGHT case
+                refresh();
+                // getyx(curscr, row, col);
         }
         ch = getch();
     }
