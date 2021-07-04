@@ -69,9 +69,7 @@ std::string ArrayBuffer::getLine(uint lineNum) {
     // Get n-th line from text file's representation in memory.
     // Since stored as a contiguous array, have to count delimiters
     // which is inefficient but is an intrinsic weakness of this naive
-    // buffer implementation that would require added complexity to improve.
-
-    /// TODO: New buffer implementation with table of delimiter indices.
+    // buffer implementation. Natural next step is array of arrays implementation.
 
     size_t begin, end;
     getLineBounds(lineNum, &begin, &end);
@@ -97,9 +95,8 @@ void ArrayBuffer::delChar(int line, int col) {
         return;
     size_t charPos = begin + col;
     char ch = fileMemory[charPos];
-    /// TODO: Handle EOL deletion correctly
-    if (ch == '\n')
-        return;
+    /// TODO: #16 Handle EOL deletion and insertion correctly
+    
     // Delete single character at given position
     fileMemory.erase(charPos, 1);
 }

@@ -2,6 +2,7 @@
 #include <curses.h>
 #include <iostream>
 #include <string>
+#include <vector>
 #include "Buffer.h"
 #include "Utils.h"
 
@@ -17,12 +18,19 @@ std::ostringstream debugLog;
 // Macro for checking CTRL + KEY presses
 #define ctrl(x) ((x) & 0x1f)
 
-// Displays desired text line from file in target row
+// Lookup table for lengths of lines displayed on screen
+std::vector<size_t> lineLengths;
+
+// Displays desired text line from file in target row.
+// Note that this method moves the cursor.
 void displayLine(int fileLineNum, int displayRow, Buffer* b) {
+    /// TODO: Make cursor temporarily invisible when scrolling, etc. to prevent flickering
     // Get line from buffer in memory
     std::string line = b->getLine(fileLineNum);
-    /// TODO: Add second argument as COLS?
+    /// TODO: Limit number of characters according to COLS?
     mvaddstr(displayRow, 0, line.c_str());
+    // Update line lengths table with newly loaded line 
+    lineLengths.insert(lineLengths.begin() + displayRow - 1, line.length());
 }
 
 // Cleanup for terminating application.
@@ -77,7 +85,7 @@ int main (int argc, char* argv[]) {
 
     // Display text from read file in visible rows
     for (int i = 0; i < LINES - 2; ++i) {
-        displayLine(i, row + i, b.get());
+        displayLine(i, i + 1, b.get());
     }
     move(row, col);
     refresh();
@@ -86,9 +94,16 @@ int main (int argc, char* argv[]) {
     int ch = getch();
     while (ch != ctrl('c')) { // Exit code
         switch (ch) {
+            /// TODO: Add page up/down key cases
             case KEY_BACKSPACE:
-                // If cursor at leftmost position, backspace has no effect
-                if (col == 0) break;
+                // Special case if cursor at leftmost position
+                if (col == 0) {
+                    // If not first line of text, then delete EOL of previous line
+                    if (row > 1) {
+                        /// TODO: Need to know length of line
+                    }
+                    break;
+                }
                 // Otherwise move left, and flow into KEY_DC case below to delete char
                 move(row, --col);
                 // No break
@@ -96,41 +111,56 @@ int main (int argc, char* argv[]) {
                 /// TODO: Refactor magic number offsets
                 b->delChar(row - 1, col);
                 delch();
+                // Need to know length of line
+                if (inch() & A_CHARTEXT == '\n' /*doesn't work*/) {
+                    /// TODO: Update lineLengths
+                    deleteln();
+                    displayLine(scrollOffset + row - 1, row, b.get());
+                } else {
+                    lineLengths[row - 1]--;
+                }
                 break;
             case KEY_LEFT:
                 move(row, col = std::max(col - 1, 0));
                 break;
             case KEY_RIGHT:
-                move(row, col = std::min(col + 1, COLS - 1));
+                move(row, col = std::min(std::min(col + 1, COLS - 1), std::max((int)lineLengths[row - 1] - 1, 0)));
                 break;
             case KEY_UP:
                 if (row == 1) {
                     if (scrollOffset > 0) {
                         scrl(-1);
                         scrollOffset--;
+                        // Delete entry from end of table because only tracking visible lines
+                        lineLengths.erase(lineLengths.end() - 1);
+                        // Load text to display in the new scrolled line.
+                        // This also adds an entry to the lineLengths table
                         displayLine(scrollOffset, row, b.get());
                     }
                 } else {
                     row--;
                 }
-                move(row, col);
+                move(row, col = std::min(col, std::max((int)lineLengths[row - 1] - 1, 0)));
                 break;
             case KEY_DOWN:
                 if (row == LINES - 2) {
                     scrl(1);
                     scrollOffset++;
+                    // Delete entry from start of table because only tracking visible lines
+                    lineLengths.erase(lineLengths.begin());
+                    // Load text to display in the new scrolled line.
+                    // This also adds an entry to the lineLengths table
                     displayLine(LINES - 3 + scrollOffset, row, b.get());
                 } else {
                     row++;
                 }
-                move(row, col);
+                move(row, col = std::min(col, std::max((int)lineLengths[row - 1] - 1, 0)));
                 break;
             case KEY_HOME:
                 move(row, col = 0);
                 break;
             case KEY_END:
-                /// TODO: This should only go to end of line (delimiter)
-                move(row, col = COLS - 1);
+                move(row, col = lineLengths[row - 1] - 1);
                 break;
             case ctrl('s'):
                 try {
@@ -141,10 +171,25 @@ int main (int argc, char* argv[]) {
                 }
                 break;
             default:
-                insch(ch);
-                b->insertChar(ch, row - 1, col);
-                /// TODO: Refactor with KEY_RIGHT case
-                move(row, col = std::min(col + 1, COLS - 1));
+                insch(ch); // Insert typed character on screen
+                b->insertChar(ch, row - 1, col); // Insert character in buffer
+                if (ch == '\n') {
+                    // New length of current line is wherever linebreak was added
+                    lineLengths[row - 1] = col + 1;
+                    // Move cursor to start of next row
+                    move(++row, col = 0);
+                    /// TODO: #17 Put text edit region in a curses window
+                    insertln(); // Add new empty line on screen above cursor, shifting rest down
+                    displayLine(scrollOffset + row - 1, row, b.get()); // Text to go in new line
+                    move(row, col);
+                    // Delete entry from end of table because only tracking visible lines
+                    lineLengths.erase(lineLengths.end() - 1);
+                } else {
+                    // Move cursor right when character typed
+                    move(row, col = std::min(col + 1, COLS - 1));
+                    lineLengths[row - 1]++;
+                }
+                
         }
         refresh();
         ch = getch();

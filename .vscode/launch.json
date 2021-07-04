@@ -8,8 +8,10 @@
             "name": "(gdb) Launch",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/tekst",
-            "args": [],
+            "program": "${workspaceFolder}/bin/tekst",
+            "args": [
+                "test_data/mini.txt"
+            ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
@@ -27,8 +29,10 @@
             "name": "g++.exe - Build and debug active file",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}\\tekst.exe",
-            "args": [],
+            "program": "${workspaceFolder}\\bin\\tekst.exe",
+            "args": [
+                "test_data\\mini.txt"
+            ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
