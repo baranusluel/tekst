@@ -77,11 +77,17 @@ int main (int argc, char* argv[]) {
     addstr("tekst by Baran Usluel\n");
     mvaddstr(LINES-1, 0, argv[1]);
     attroff(A_BOLD);
+
     // Default row is after header
     int row = 1;
     int col = 0;
-    int scrollOffset = 0;
     move(row, col);
+
+    // Which column cursors wants to be on (for persistent
+    // cursor position across varying line lengths)
+    int colGoal = 0;
+
+    int scrollOffset = 0;
 
     // Display text from read file in visible rows
     for (int i = 0; i < LINES - 2; ++i) {
@@ -100,13 +106,13 @@ int main (int argc, char* argv[]) {
                 if (col == 0) {
                     // If not first line of text, then delete EOL of previous line
                     if (row > 1) {
-                        move(--row, col = lineLengths[row - 2] - 1);
+                        move(--row, colGoal = col = lineLengths[row - 2] - 1);
                     } else {
                         break;
                     }
                 } else {
                     // Otherwise move left, and flow into KEY_DC case below to delete char
-                    move(row, --col);
+                    move(row, colGoal = --col);
                 }
                 // No break
             case KEY_DC:
@@ -130,10 +136,10 @@ int main (int argc, char* argv[]) {
                 }
                 break;
             case KEY_LEFT:
-                move(row, col = std::max(col - 1, 0));
+                move(row, colGoal = col = std::max(col - 1, 0));
                 break;
             case KEY_RIGHT:
-                move(row, col = std::min(std::min(col + 1, COLS - 1), std::max((int)lineLengths[row - 1] - 1, 0)));
+                move(row, colGoal = col = std::min(std::min(col + 1, COLS - 1), std::max((int)lineLengths[row - 1] - 1, 0)));
                 break;
             case KEY_UP:
                 if (row == 1) {
@@ -149,7 +155,7 @@ int main (int argc, char* argv[]) {
                 } else {
                     row--;
                 }
-                move(row, col = std::min(col, std::max((int)lineLengths[row - 1] - 1, 0)));
+                move(row, col = std::min(colGoal, std::max((int)lineLengths[row - 1] - 1, 0)));
                 break;
             case KEY_DOWN:
                 if (row == LINES - 2) {
@@ -163,13 +169,14 @@ int main (int argc, char* argv[]) {
                 } else {
                     row++;
                 }
-                move(row, col = std::min(col, std::max((int)lineLengths[row - 1] - 1, 0)));
+                /// TODO: Shouldn't be able to go down into empty space
+                move(row, col = std::min(colGoal, std::max((int)lineLengths[row - 1] - 1, 0)));
                 break;
             case KEY_HOME:
-                move(row, col = 0);
+                move(row, colGoal = col = 0);
                 break;
             case KEY_END:
-                move(row, col = lineLengths[row - 1] - 1);
+                move(row, colGoal = col = lineLengths[row - 1] - 1);
                 break;
             case ctrl('s'):
                 try {
@@ -186,7 +193,7 @@ int main (int argc, char* argv[]) {
                     // New length of current line is wherever linebreak was added
                     lineLengths[row - 1] = col + 1;
                     // Move cursor to start of next row
-                    move(++row, col = 0);
+                    move(++row, colGoal = col = 0);
                     /// TODO: #17 Put text edit region in a curses window
                     insertln(); // Add new empty line on screen above cursor, shifting rest down
                     displayLine(scrollOffset + row - 1, row, b.get()); // Text to go in new line
@@ -195,7 +202,7 @@ int main (int argc, char* argv[]) {
                     lineLengths.erase(lineLengths.end() - 1);
                 } else {
                     // Move cursor right when character typed
-                    move(row, col = std::min(col + 1, COLS - 1));
+                    move(row, colGoal = col = std::min(col + 1, COLS - 1));
                     lineLengths[row - 1]++;
                 }
                 
