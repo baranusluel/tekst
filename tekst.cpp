@@ -28,8 +28,10 @@ void displayLine(int fileLineNum, int displayRow, Buffer* b) {
     std::string line = b->getLine(fileLineNum);
     /// TODO: Limit number of characters according to COLS?
     mvaddstr(displayRow, 0, line.c_str());
-    // Update line lengths table with newly loaded line 
-    lineLengths.insert(lineLengths.begin() + displayRow - 1, line.length());
+    size_t len = line.length();
+    if (len > 0 && line.back() == '\n') len--;
+    // Update line lengths table with newly loaded line (exclude newline character)
+    lineLengths.insert(lineLengths.begin() + displayRow - 1, len);
 }
 
 // Cleanup for terminating application.
@@ -103,9 +105,9 @@ int main (int argc, char* argv[]) {
             case KEY_BACKSPACE:
                 // Special case if cursor at leftmost position
                 if (col == 0) {
-                    // If not first line of text, then delete EOL of previous line
+                    // If not first line of text, then move to delete EOL of previous line
                     if (row > 1) {
-                        move(--row, colGoal = col = lineLengths[row - 2] - 1);
+                        move(--row, colGoal = col = lineLengths[row - 2]);
                     } else {
                         break;
                     }
@@ -119,7 +121,7 @@ int main (int argc, char* argv[]) {
                 b->delChar(row - 1, col);
                 delch();
                 // If cursor is at end of line, deleting linebreak
-                if (col == lineLengths[row - 1] - 1) {
+                if (col == lineLengths[row - 1]) {
                     curs_set(0); // Hide cursor during operations to avoid flickering
                     deleteln(); // Deletes next row and shifts everything up
                     // Delete entry for current row from lineLengths, it will be readded by displayLine
@@ -140,7 +142,7 @@ int main (int argc, char* argv[]) {
                 move(row, colGoal = col = std::max(col - 1, 0));
                 break;
             case KEY_RIGHT:
-                move(row, colGoal = col = std::min(std::min(col + 1, COLS - 1), std::max((int)lineLengths[row - 1] - 1, 0)));
+                move(row, colGoal = col = std::min(std::min(col + 1, COLS - 1), (int)lineLengths[row - 1]));
                 break;
             case KEY_UP:
                 if (row == 1) {
@@ -157,10 +159,12 @@ int main (int argc, char* argv[]) {
                 } else {
                     row--;
                 }
-                move(row, col = std::min(colGoal, std::max((int)lineLengths[row - 1] - 1, 0)));
+                move(row, col = std::min(colGoal, (int)lineLengths[row - 1]));
                 curs_set(1);
                 break;
             case KEY_DOWN:
+                if (row == b->getNumLines())
+                    break;
                 if (row == LINES - 2) {
                     curs_set(0); // Hide cursor during operations to avoid flickering
                     scrl(1);
@@ -174,14 +178,14 @@ int main (int argc, char* argv[]) {
                     row++;
                 }
                 /// TODO: Shouldn't be able to go down into empty space
-                move(row, col = std::min(colGoal, std::max((int)lineLengths[row - 1] - 1, 0)));
+                move(row, col = std::min(colGoal, (int)lineLengths[row - 1]));
                 curs_set(1);
                 break;
             case KEY_HOME:
                 move(row, colGoal = col = 0);
                 break;
             case KEY_END:
-                move(row, colGoal = col = lineLengths[row - 1] - 1);
+                move(row, colGoal = col = lineLengths[row - 1]);
                 break;
             case ctrl('s'):
                 try {
@@ -197,7 +201,7 @@ int main (int argc, char* argv[]) {
                 if (ch == '\n') {
                     curs_set(0); // Hide cursor during operations to avoid flickering
                     // New length of current line is wherever linebreak was added
-                    lineLengths[row - 1] = col + 1;
+                    lineLengths[row - 1] = col;
                     // Move cursor to start of next row
                     move(++row, colGoal = col = 0);
                     /// TODO: #17 Put text edit region in a curses window

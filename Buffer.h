@@ -17,6 +17,7 @@ class Buffer {
         virtual void save() = 0;
         virtual void delChar(int line, int col) = 0;
         virtual void insertChar(char c, int line, int col) = 0;
+        virtual uint getNumLines() = 0;
 
         // Static factory method for instantiating Buffer objects
         static std::unique_ptr<Buffer> createBuffer(BufferType, char* filename);
