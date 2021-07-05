@@ -86,6 +86,7 @@ int main (int argc, char* argv[]) {
     // Draw window chrome
     WINDOW* headW = newwin(1, COLS, 0, 0);
     wattron(headW, A_BOLD);
+    wattron(headW, A_STANDOUT);
     waddstr(headW, "tekst by Baran Usluel\n");
     wnoutrefresh(headW);
     WINDOW* footW = newwin(1, COLS, LINES-1, 0);
@@ -124,7 +125,7 @@ int main (int argc, char* argv[]) {
                 if (col == 0) {
                     // If not first line of text, then move to delete EOL of previous line
                     if (row > 0) {
-                        wmove(txtW, --row, colGoal = col = linesInView[row - 1]->length() - 1);
+                        wmove(txtW, --row, colGoal = col = getCleanStrLen(linesInView[row - 1].value()));
                     } else {
                         break;
                     }
@@ -137,7 +138,7 @@ int main (int argc, char* argv[]) {
                 b->delChar(row, col);
                 wdelch(txtW);
                 // If cursor is at end of line, deleting linebreak
-                if (col == linesInView[row]->length() - 1) {
+                if (col == getCleanStrLen(linesInView[row].value())) {
                     curs_set(0); // Hide cursor during operations to avoid flickering
                     wdeleteln(txtW); // Deletes next row and shifts everything up
                     // Delete entry for current row from linesInView, it will be readded by displayLine
@@ -159,7 +160,7 @@ int main (int argc, char* argv[]) {
                 wmove(txtW, row, colGoal = col = std::max(col - 1, 0));
                 break;
             case KEY_RIGHT:
-                wmove(txtW, row, colGoal = col = std::min(std::min(col + 1, COLS_TXT - 1), (int)linesInView[row]->length() - 1));
+                wmove(txtW, row, colGoal = col = std::min(std::min(col + 1, COLS_TXT - 1), getCleanStrLen(linesInView[row].value())));
                 break;
             case KEY_UP:
                 if (row == 0) {
@@ -175,7 +176,7 @@ int main (int argc, char* argv[]) {
                 } else {
                     row--;
                 }
-                wmove(txtW, row, col = std::min(colGoal, (int)linesInView[row]->length() - 1));
+                wmove(txtW, row, col = std::min(colGoal, getCleanStrLen(linesInView[row].value())));
                 curs_set(1);
                 break;
             case KEY_DOWN:
@@ -198,14 +199,14 @@ int main (int argc, char* argv[]) {
                         break;
                     row++;
                 }
-                wmove(txtW, row, col = std::min(colGoal, (int)linesInView[row]->length() - 1));
+                wmove(txtW, row, col = std::min(colGoal, getCleanStrLen(linesInView[row].value())));
                 curs_set(1);
                 break;
             case KEY_HOME:
                 wmove(txtW, row, colGoal = col = 0);
                 break;
             case KEY_END:
-                wmove(txtW, row, colGoal = col = linesInView[row]->length() - 1);
+                wmove(txtW, row, colGoal = col = getCleanStrLen(linesInView[row].value()));
                 break;
             case ctrl('s'):
                 try {
@@ -222,7 +223,7 @@ int main (int argc, char* argv[]) {
                 if (ch == '\n') {
                     curs_set(0); // Hide cursor during operations to avoid flickering
                     // Current line is truncated to linebreak position in view memory
-                    linesInView[row] = linesInView[row]->substr(0, col);
+                    linesInView[row] = linesInView[row]->substr(0, col) + '\n';
                     // Move cursor to start of next row
                     wmove(txtW, ++row, colGoal = col = 0);
                     winsertln(txtW); // Add new empty line on screen above cursor, shifting rest down
