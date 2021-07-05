@@ -58,8 +58,22 @@ void displayLineFromCache(WINDOW* win, int row) {
     }
 }
 
+void scrollLineNumsUp(WINDOW* lineNumW, const int& scrollOffset) {
+    wscrl(lineNumW, 1);
+    wmove(lineNumW, LINES_TXT - 1, 0);
+    wprintw(lineNumW, "%u", LINES_TXT + scrollOffset);
+    wnoutrefresh(lineNumW);
+}
+
+void scrollLineNumsDown(WINDOW* lineNumW, const int& scrollOffset) {
+    wscrl(lineNumW, -1);
+    wmove(lineNumW, 0, 0);
+    wprintw(lineNumW, "%u", scrollOffset + 1);
+    wnoutrefresh(lineNumW);
+}
+
 // Moves lines in text view up due to user scrolling downwards
-void scrollTextViewUp(WINDOW* txtW, int& scrollOffset, Buffer* b, bool loadBottomLine) {
+void scrollTextViewUp(WINDOW* txtW, WINDOW* lineNumW, int& scrollOffset, Buffer* b, bool loadBottomLine) {
     curs_set(0); // Hide cursor during operations to avoid flickering
     wscrl(txtW, 1);
     scrollOffset++;
@@ -68,11 +82,12 @@ void scrollTextViewUp(WINDOW* txtW, int& scrollOffset, Buffer* b, bool loadBotto
     // Load text to display in the new scrolled line.
     if (loadBottomLine)
         displayLineFromBuffer(txtW, LINES_TXT - 1 + scrollOffset, LINES_TXT - 1, b);
+    scrollLineNumsUp(lineNumW, scrollOffset);
     curs_set(1);
 }
 
 // Moves lines in text view down due to user scrolling upwards
-void scrollTextViewDown(WINDOW* txtW, int& scrollOffset, Buffer* b, bool loadTopLine) {
+void scrollTextViewDown(WINDOW* txtW, WINDOW* lineNumW, int& scrollOffset, Buffer* b, bool loadTopLine) {
     curs_set(0); // Hide cursor during operations to avoid flickering
     wscrl(txtW, -1);
     scrollOffset--;
@@ -81,15 +96,16 @@ void scrollTextViewDown(WINDOW* txtW, int& scrollOffset, Buffer* b, bool loadTop
     // Load text to display in the new scrolled line.
     if (loadTopLine)
         displayLineFromBuffer(txtW, scrollOffset, 0, b);
+    scrollLineNumsDown(lineNumW, scrollOffset);
     curs_set(1);
 }
 
-bool moveCursorUp(WINDOW* txtW, int& scrollOffset, Buffer* b, int& row, int& col, int& colGoal) {
+bool moveCursorUp(WINDOW* txtW, WINDOW* lineNumW, int& scrollOffset, Buffer* b, int& row, int& col, int& colGoal) {
     if (row == 0) {
         // If no more lines above, stop
         if (scrollOffset <= 0)
             return false;
-        scrollTextViewDown(txtW, scrollOffset, b, true);
+        scrollTextViewDown(txtW, lineNumW, scrollOffset, b, true);
     } else {
         row--;
     }
@@ -97,14 +113,14 @@ bool moveCursorUp(WINDOW* txtW, int& scrollOffset, Buffer* b, int& row, int& col
     return true;
 }
 
-bool moveCursorDown(WINDOW* txtW, int& scrollOffset, Buffer* b, int& row, int& col, int& colGoal) {
+bool moveCursorDown(WINDOW* txtW, WINDOW* lineNumW, int& scrollOffset, Buffer* b, int& row, int& col, int& colGoal) {
     if (row == LINES_TXT - 1) {
         // If there is no accessible next line, don't move cursor down.
         // Can't check next line directly because not loaded into view memory yet,
         // so instead check if there is newline at the end of this line.
         if (linesInView[row]->back() != '\n')
             return false;
-        scrollTextViewUp(txtW, scrollOffset, b, true);
+        scrollTextViewUp(txtW, lineNumW, scrollOffset, b, true);
     } else {
         // If there is no accessible next line, don't move cursor down
         if (!linesInView[row + 1].has_value())
@@ -115,11 +131,11 @@ bool moveCursorDown(WINDOW* txtW, int& scrollOffset, Buffer* b, int& row, int& c
     return true;
 }
 
-bool moveCursorLeft(WINDOW* txtW, int& scrollOffset, Buffer* b, int& row, int& col, int& colGoal) {
+bool moveCursorLeft(WINDOW* txtW, WINDOW* lineNumW, int& scrollOffset, Buffer* b, int& row, int& col, int& colGoal) {
     // If at start of line and moving left, try to go to end of previous line
     if (col == 0) {
         // If move up success, then go to end
-        if (moveCursorUp(txtW, scrollOffset, b, row, col, colGoal))
+        if (moveCursorUp(txtW, lineNumW, scrollOffset, b, row, col, colGoal))
             wmove(txtW, row, colGoal = col = getCleanStrLen(linesInView[row].value()));
         else
             return false;
@@ -128,11 +144,11 @@ bool moveCursorLeft(WINDOW* txtW, int& scrollOffset, Buffer* b, int& row, int& c
     return true;
 }
 
-bool moveCursorRight(WINDOW* txtW, int& scrollOffset, Buffer* b, int& row, int& col, int& colGoal) {
+bool moveCursorRight(WINDOW* txtW, WINDOW* lineNumW, int& scrollOffset, Buffer* b, int& row, int& col, int& colGoal) {
     // If at end of line and moving right, try to go to start of next line
     if (col == getCleanStrLen(linesInView[row].value())) {
         // If move down success, then go to start
-        if (moveCursorDown(txtW, scrollOffset, b, row, col, colGoal))
+        if (moveCursorDown(txtW, lineNumW, scrollOffset, b, row, col, colGoal))
             wmove(txtW, row, colGoal = col = 0);
         else
             return false;
@@ -164,32 +180,30 @@ void delCharAtCursor(WINDOW* txtW, int& scrollOffset, Buffer* b, int& row, int& 
     }
 }
 
-void insertCharAtCursor(WINDOW* txtW, int& scrollOffset, Buffer* b, int& row, int& col, int& colGoal, int ch) {
+void insertCharAtCursor(WINDOW* txtW, WINDOW* lineNumW, int& scrollOffset, Buffer* b, int& row, int& col, int& colGoal, int ch) {
     /// CONSIDER: Splitting up this function for \n and other chars
     winsch(txtW, ch); // Insert typed character on screen
-    wrefresh(txtW);
     b->insertChar(ch, row + scrollOffset, col); // Insert character in buffer
     if (ch == '\n') {
-        //curs_set(0); // Hide cursor during operations to avoid flickering **********
+        curs_set(0); // Hide cursor during operations to avoid flickering
         // Current line is truncated to linebreak position in view memory
         linesInView[row] = linesInView[row]->substr(0, col) + '\n';
         // If view has to scroll due to new line
         if (row == LINES_TXT - 1) {
-            // Not directly scrolling view here because it happens automatically
+            // Not directly scrolling text view here because it happens automatically
             // when \n char printed by winsch().
             scrollOffset++;
             // Delete entry from start of table because only tracking visible lines
             linesInView.erase(linesInView.begin());
+            // Explicitly scroll line numbers
+            scrollLineNumsUp(lineNumW, scrollOffset);
         } else {
             wmove(txtW, ++row, col); // Move to next row before inserting new line
-            wrefresh(txtW);
             winsertln(txtW); // Add new empty line on screen above cursor, shifting rest down
-            wrefresh(txtW);
             // Delete entry from end of table because only tracking visible lines
             linesInView.erase(linesInView.end() - 1);
         }
         displayLineFromBuffer(txtW, scrollOffset + row, row, b); // Text to go in new line
-        wrefresh(txtW);
         // Move cursor to start of new line
         wmove(txtW, row, colGoal = col = 0);
         curs_set(1);
@@ -245,8 +259,10 @@ int main (int argc, char* argv[]) {
 
     // Draw line numbers
     WINDOW* lineNumW = newwin(LINES_TXT, 3, 1, 0);
+    scrollok(lineNumW, TRUE);
     for (int i = 0; i < LINES_TXT; ++i) {
-        wprintw(lineNumW, "%u\n", i + 1);
+        wmove(lineNumW, i, 0);
+        wprintw(lineNumW, "%u", i + 1);
     }
     wnoutrefresh(lineNumW);
 
@@ -278,23 +294,23 @@ int main (int argc, char* argv[]) {
             /// TODO: Add page up/down key cases
             case KEY_BACKSPACE:
                 // If able to move left (or up), do it and delete char
-                if (moveCursorLeft(txtW, scrollOffset, b.get(), row, col, colGoal))
+                if (moveCursorLeft(txtW, lineNumW, scrollOffset, b.get(), row, col, colGoal))
                     delCharAtCursor(txtW, scrollOffset, b.get(), row, col);
                 break;
             case KEY_DC:
                 delCharAtCursor(txtW, scrollOffset, b.get(), row, col);
                 break;
             case KEY_LEFT:
-                moveCursorLeft(txtW, scrollOffset, b.get(), row, col, colGoal);
+                moveCursorLeft(txtW, lineNumW, scrollOffset, b.get(), row, col, colGoal);
                 break;
             case KEY_RIGHT:
-                moveCursorRight(txtW, scrollOffset, b.get(), row, col, colGoal);
+                moveCursorRight(txtW, lineNumW, scrollOffset, b.get(), row, col, colGoal);
                 break;
             case KEY_UP:
-                moveCursorUp(txtW, scrollOffset, b.get(), row, col, colGoal);
+                moveCursorUp(txtW, lineNumW, scrollOffset, b.get(), row, col, colGoal);
                 break;
             case KEY_DOWN:
-                moveCursorDown(txtW, scrollOffset, b.get(), row, col, colGoal);
+                moveCursorDown(txtW, lineNumW, scrollOffset, b.get(), row, col, colGoal);
                 break;
             case KEY_HOME:
                 wmove(txtW, row, colGoal = col = 0);
@@ -311,7 +327,7 @@ int main (int argc, char* argv[]) {
                 }
                 break;
             default:
-                insertCharAtCursor(txtW, scrollOffset, b.get(), row, col, colGoal, ch);
+                insertCharAtCursor(txtW, lineNumW, scrollOffset, b.get(), row, col, colGoal, ch);
         }
         wrefresh(txtW);
         ch = wgetch(txtW);
