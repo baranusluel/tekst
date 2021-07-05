@@ -44,7 +44,7 @@ void ArrayBuffer::getLineBounds(uint lineNum, size_t* beginP, size_t* endP) {
 
     do {
         // If not first iteration, move `begin` pos to char after delimiter
-        begin = end > 0 ? end + 1 : 0;
+        begin = lineCount > 0 ? end + 1 : 0;
         // Search for the next delimiter starting from `begin`
         end = fileMemory.find('\n', begin);
         // No more delimiters

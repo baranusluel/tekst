@@ -20,7 +20,7 @@ std::ostringstream debugLog;
 #define ctrl(x) ((x) & 0x1f)
 // Number of lines in text edit region (excludes header and footer)
 #define LINES_TXT LINES - 2
-#define COLS_TXT COLS
+#define COLS_TXT COLS - 3
 
 // Table of lines / strings that are currently within the editor's view.
 // This is the viewer's text memory, not to be confused with Buffer's complete text memory.
@@ -29,7 +29,7 @@ std::vector<std::optional<std::string>> linesInView;
 
 // Displays desired text line from file in target row.
 // Note that this method moves the cursor.
-void displayLine(WINDOW* win, int fileLineNum, int displayRow, Buffer* b) {
+void displayLineFromBuffer(WINDOW* win, int fileLineNum, int displayRow, Buffer* b) {
     // Get line from buffer in memory
     std::optional<std::string> line = b->getLine(fileLineNum);    
     if (line.has_value()) {
@@ -47,6 +47,158 @@ void displayLine(WINDOW* win, int fileLineNum, int displayRow, Buffer* b) {
     }
     // Update memory with newly loaded line
     linesInView.insert(linesInView.begin() + displayRow, line);
+}
+
+/// TODO: Handle inserting & deleting EOL cases with this method
+/// instead of above for efficiency
+void displayLineFromCache(WINDOW* win, int row) {
+    // Get line from view memory
+    if (linesInView[row].has_value()) {
+        mvwaddstr(win, row, 0, linesInView[row]->c_str());
+    }
+}
+
+// Moves lines in text view up due to user scrolling downwards
+void scrollTextViewUp(WINDOW* txtW, int& scrollOffset, Buffer* b, bool loadBottomLine) {
+    curs_set(0); // Hide cursor during operations to avoid flickering
+    wscrl(txtW, 1);
+    scrollOffset++;
+    // Delete entry from start of table because only tracking visible lines
+    linesInView.erase(linesInView.begin());
+    // Load text to display in the new scrolled line.
+    if (loadBottomLine)
+        displayLineFromBuffer(txtW, LINES_TXT - 1 + scrollOffset, LINES_TXT - 1, b);
+    curs_set(1);
+}
+
+// Moves lines in text view down due to user scrolling upwards
+void scrollTextViewDown(WINDOW* txtW, int& scrollOffset, Buffer* b, bool loadTopLine) {
+    curs_set(0); // Hide cursor during operations to avoid flickering
+    wscrl(txtW, -1);
+    scrollOffset--;
+    // Delete entry from end of table because only tracking visible lines
+    linesInView.erase(linesInView.end() - 1);
+    // Load text to display in the new scrolled line.
+    if (loadTopLine)
+        displayLineFromBuffer(txtW, scrollOffset, 0, b);
+    curs_set(1);
+}
+
+bool moveCursorUp(WINDOW* txtW, int& scrollOffset, Buffer* b, int& row, int& col, int& colGoal) {
+    if (row == 0) {
+        // If no more lines above, stop
+        if (scrollOffset <= 0)
+            return false;
+        scrollTextViewDown(txtW, scrollOffset, b, true);
+    } else {
+        row--;
+    }
+    wmove(txtW, row, col = std::min(colGoal, getCleanStrLen(linesInView[row].value())));
+    return true;
+}
+
+bool moveCursorDown(WINDOW* txtW, int& scrollOffset, Buffer* b, int& row, int& col, int& colGoal) {
+    if (row == LINES_TXT - 1) {
+        // If there is no accessible next line, don't move cursor down.
+        // Can't check next line directly because not loaded into view memory yet,
+        // so instead check if there is newline at the end of this line.
+        if (linesInView[row]->back() != '\n')
+            return false;
+        scrollTextViewUp(txtW, scrollOffset, b, true);
+    } else {
+        // If there is no accessible next line, don't move cursor down
+        if (!linesInView[row + 1].has_value())
+            return false;
+        row++;
+    }
+    wmove(txtW, row, col = std::min(colGoal, getCleanStrLen(linesInView[row].value())));
+    return true;
+}
+
+bool moveCursorLeft(WINDOW* txtW, int& scrollOffset, Buffer* b, int& row, int& col, int& colGoal) {
+    // If at start of line and moving left, try to go to end of previous line
+    if (col == 0) {
+        // If move up success, then go to end
+        if (moveCursorUp(txtW, scrollOffset, b, row, col, colGoal))
+            wmove(txtW, row, colGoal = col = getCleanStrLen(linesInView[row].value()));
+        else
+            return false;
+    } else
+        wmove(txtW, row, colGoal = --col);
+    return true;
+}
+
+bool moveCursorRight(WINDOW* txtW, int& scrollOffset, Buffer* b, int& row, int& col, int& colGoal) {
+    // If at end of line and moving right, try to go to start of next line
+    if (col == getCleanStrLen(linesInView[row].value())) {
+        // If move down success, then go to start
+        if (moveCursorDown(txtW, scrollOffset, b, row, col, colGoal))
+            wmove(txtW, row, colGoal = col = 0);
+        else
+            return false;
+    } else
+        wmove(txtW, row, colGoal = col = std::min(col + 1, COLS_TXT - 1));
+    return true;
+}
+
+void delCharAtCursor(WINDOW* txtW, int& scrollOffset, Buffer* b, int& row, int& col) {
+    b->delChar(row + scrollOffset, col);
+    wdelch(txtW);
+    // If cursor is at end of line, deleting linebreak
+    if (col == getCleanStrLen(linesInView[row].value())) {
+        curs_set(0); // Hide cursor during operations to avoid flickering
+        wdeleteln(txtW); // Deletes next row and shifts everything up
+        // Delete entry for current row from linesInView, it will be readded by displayLineFromBuffer
+        linesInView.erase(linesInView.begin() + row);
+        // Delete entry for the deleted row from linesInView
+        linesInView.erase(linesInView.begin() + row);
+        // Display updated (concatenated) line
+        displayLineFromBuffer(txtW, scrollOffset + row, row, b);
+        // Display line that scrolled into view from bottom
+        displayLineFromBuffer(txtW, LINES_TXT - 1 + scrollOffset, LINES_TXT - 1, b);
+        wmove(txtW, row, col);
+        curs_set(1);
+    } else {
+        // Delete char from line in view memory
+        linesInView[row]->erase(col, 1);
+    }
+}
+
+void insertCharAtCursor(WINDOW* txtW, int& scrollOffset, Buffer* b, int& row, int& col, int& colGoal, int ch) {
+    /// CONSIDER: Splitting up this function for \n and other chars
+    winsch(txtW, ch); // Insert typed character on screen
+    wrefresh(txtW);
+    b->insertChar(ch, row + scrollOffset, col); // Insert character in buffer
+    if (ch == '\n') {
+        //curs_set(0); // Hide cursor during operations to avoid flickering **********
+        // Current line is truncated to linebreak position in view memory
+        linesInView[row] = linesInView[row]->substr(0, col) + '\n';
+        // If view has to scroll due to new line
+        if (row == LINES_TXT - 1) {
+            // Not directly scrolling view here because it happens automatically
+            // when \n char printed by winsch().
+            scrollOffset++;
+            // Delete entry from start of table because only tracking visible lines
+            linesInView.erase(linesInView.begin());
+        } else {
+            wmove(txtW, ++row, col); // Move to next row before inserting new line
+            wrefresh(txtW);
+            winsertln(txtW); // Add new empty line on screen above cursor, shifting rest down
+            wrefresh(txtW);
+            // Delete entry from end of table because only tracking visible lines
+            linesInView.erase(linesInView.end() - 1);
+        }
+        displayLineFromBuffer(txtW, scrollOffset + row, row, b); // Text to go in new line
+        wrefresh(txtW);
+        // Move cursor to start of new line
+        wmove(txtW, row, colGoal = col = 0);
+        curs_set(1);
+    } else {
+        // Insert new character into line in view memory
+        linesInView[row]->insert(linesInView[row]->begin() + col, ch);
+        // Move cursor right when character typed
+        wmove(txtW, row, colGoal = col = std::min(col + 1, COLS_TXT - 1));
+    }
 }
 
 int main (int argc, char* argv[]) {
@@ -75,13 +227,10 @@ int main (int argc, char* argv[]) {
     noecho();
 
     // Create text edit region window
-    WINDOW* txtW = newwin(LINES_TXT, COLS_TXT, 1, 0);
+    WINDOW* txtW = newwin(LINES_TXT, COLS_TXT, 1, 3);
     keypad(txtW, TRUE);
     // Enable vertical scrolling
     scrollok(txtW, TRUE);
-    // Scrolling region excludes header and footer rows
-    /// TODO: Update on resize
-    // setscrreg(1, LINES - 2);
 
     // Draw window chrome
     WINDOW* headW = newwin(1, COLS, 0, 0);
@@ -94,6 +243,13 @@ int main (int argc, char* argv[]) {
     waddstr(footW, argv[1]);
     wnoutrefresh(footW);
 
+    // Draw line numbers
+    WINDOW* lineNumW = newwin(LINES_TXT, 3, 1, 0);
+    for (int i = 0; i < LINES_TXT; ++i) {
+        wprintw(lineNumW, "%u\n", i + 1);
+    }
+    wnoutrefresh(lineNumW);
+
     int scrollOffset = 0; // Amount text window was scrolled by (positive = downwards)
     int row = 0, col = 0; // Position of cursor in text window
     // Which column cursors wants to be on (for persistent
@@ -102,7 +258,7 @@ int main (int argc, char* argv[]) {
 
     // Display text from read file in visible rows
     for (int i = 0; i < LINES_TXT; ++i) {
-        displayLine(txtW, i, i, b.get());
+        displayLineFromBuffer(txtW, i, i, b.get());
     }
 
     // Move cursor to start of file
@@ -117,90 +273,28 @@ int main (int argc, char* argv[]) {
 
     // Input loop
     int ch = wgetch(txtW);
-    while (ch != ctrl('c')) { // Exit code
+    while (ch != ctrl('c') && !err) { // Exit code
         switch (ch) {
             /// TODO: Add page up/down key cases
             case KEY_BACKSPACE:
-                // Special case if cursor at leftmost position
-                if (col == 0) {
-                    // If not first line of text, then move to delete EOL of previous line
-                    if (row > 0) {
-                        wmove(txtW, --row, colGoal = col = getCleanStrLen(linesInView[row - 1].value()));
-                    } else {
-                        break;
-                    }
-                } else {
-                    // Otherwise move left, and flow into KEY_DC case below to delete char
-                    wmove(txtW, row, colGoal = --col);
-                }
-                // No break
+                // If able to move left (or up), do it and delete char
+                if (moveCursorLeft(txtW, scrollOffset, b.get(), row, col, colGoal))
+                    delCharAtCursor(txtW, scrollOffset, b.get(), row, col);
+                break;
             case KEY_DC:
-                b->delChar(row, col);
-                wdelch(txtW);
-                // If cursor is at end of line, deleting linebreak
-                if (col == getCleanStrLen(linesInView[row].value())) {
-                    curs_set(0); // Hide cursor during operations to avoid flickering
-                    wdeleteln(txtW); // Deletes next row and shifts everything up
-                    // Delete entry for current row from linesInView, it will be readded by displayLine
-                    linesInView.erase(linesInView.begin() + row);
-                    // Delete entry for the deleted row from linesInView
-                    linesInView.erase(linesInView.begin() + row);
-                    // Display updated (concatenated) line
-                    displayLine(txtW, scrollOffset + row, row, b.get());
-                    // Display line that scrolled into view from bottom
-                    displayLine(txtW, LINES_TXT - 1 + scrollOffset, LINES_TXT - 1, b.get());
-                    wmove(txtW, row, col);
-                    curs_set(1);
-                } else {
-                    // Delete char from line in view memory
-                    linesInView[row]->erase(col, 1);
-                }
+                delCharAtCursor(txtW, scrollOffset, b.get(), row, col);
                 break;
             case KEY_LEFT:
-                wmove(txtW, row, colGoal = col = std::max(col - 1, 0));
+                moveCursorLeft(txtW, scrollOffset, b.get(), row, col, colGoal);
                 break;
             case KEY_RIGHT:
-                wmove(txtW, row, colGoal = col = std::min(std::min(col + 1, COLS_TXT - 1), getCleanStrLen(linesInView[row].value())));
+                moveCursorRight(txtW, scrollOffset, b.get(), row, col, colGoal);
                 break;
             case KEY_UP:
-                if (row == 0) {
-                    if (scrollOffset > 0) {
-                        curs_set(0); // Hide cursor during operations to avoid flickering
-                        wscrl(txtW, -1);
-                        scrollOffset--;
-                        // Delete entry from end of table because only tracking visible lines
-                        linesInView.erase(linesInView.end() - 1);
-                        // Load text to display in the new scrolled line.
-                        displayLine(txtW, scrollOffset, row, b.get());
-                    }
-                } else {
-                    row--;
-                }
-                wmove(txtW, row, col = std::min(colGoal, getCleanStrLen(linesInView[row].value())));
-                curs_set(1);
+                moveCursorUp(txtW, scrollOffset, b.get(), row, col, colGoal);
                 break;
             case KEY_DOWN:
-                if (row == LINES_TXT - 1) {
-                    // If there is no accessible next line, don't move cursor down.
-                    // Can't check next line directly because not loaded into view memory yet,
-                    // so instead check if there is newline at the end of this line.
-                    if (linesInView[row]->back() != '\n')
-                        break;
-                    curs_set(0); // Hide cursor during operations to avoid flickering
-                    wscrl(txtW, 1);
-                    scrollOffset++;
-                    // Delete entry from start of table because only tracking visible lines
-                    linesInView.erase(linesInView.begin());
-                    // Load text to display in the new scrolled line.
-                    displayLine(txtW, LINES_TXT - 1 + scrollOffset, row, b.get());
-                } else {
-                    // If there is no accessible next line, don't move cursor down
-                    if (!linesInView[row + 1].has_value())
-                        break;
-                    row++;
-                }
-                wmove(txtW, row, col = std::min(colGoal, getCleanStrLen(linesInView[row].value())));
-                curs_set(1);
+                moveCursorDown(txtW, scrollOffset, b.get(), row, col, colGoal);
                 break;
             case KEY_HOME:
                 wmove(txtW, row, colGoal = col = 0);
@@ -214,31 +308,10 @@ int main (int argc, char* argv[]) {
                 } catch (std::string msg) {
                     err = true;
                     debugLog << msg << std::endl;
-                    break;
                 }
                 break;
             default:
-                winsch(txtW, ch); // Insert typed character on screen
-                b->insertChar(ch, row, col); // Insert character in buffer
-                if (ch == '\n') {
-                    curs_set(0); // Hide cursor during operations to avoid flickering
-                    // Current line is truncated to linebreak position in view memory
-                    linesInView[row] = linesInView[row]->substr(0, col) + '\n';
-                    // Move cursor to start of next row
-                    wmove(txtW, ++row, colGoal = col = 0);
-                    winsertln(txtW); // Add new empty line on screen above cursor, shifting rest down
-                    displayLine(txtW, scrollOffset + row, row, b.get()); // Text to go in new line
-                    wmove(txtW, row, col);
-                    // Delete entry from end of table because only tracking visible lines
-                    linesInView.erase(linesInView.end() - 1);
-                    curs_set(1);
-                } else {
-                    // Insert new character into line in view memory
-                    linesInView[row]->insert(linesInView[row]->begin() + col, ch);
-                    // Move cursor right when character typed
-                    wmove(txtW, row, colGoal = col = std::min(col + 1, COLS_TXT - 1));
-                }
-                
+                insertCharAtCursor(txtW, scrollOffset, b.get(), row, col, colGoal, ch);
         }
         wrefresh(txtW);
         ch = wgetch(txtW);
@@ -247,6 +320,7 @@ int main (int argc, char* argv[]) {
     delwin(headW);
     delwin(footW);
     delwin(txtW);
+    delwin(lineNumW);
 
     endwin();
     if (DEBUG || err)
