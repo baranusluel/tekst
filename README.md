@@ -25,9 +25,11 @@ The project is developed in VSCode with the official "C/C++" and "Remote - WSL" 
 - Select, insert, delete text
 - Efficiently store text in memory
 - Undo/redo
-- Word wrapping
 - Find and replace
 - Copy/cut and paste
+- Vertical and horizontal scroll
+- Extended character support
+- Very large file support
 
 ### Data structures for text buffer
 #### Want:
