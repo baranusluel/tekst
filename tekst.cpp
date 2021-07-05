@@ -18,20 +18,25 @@ std::ostringstream debugLog;
 // Macro for checking CTRL + KEY presses
 #define ctrl(x) ((x) & 0x1f)
 
-// Lookup table for lengths of lines displayed on screen
+// Lookup table for lengths of lines displayed on screen.
+// Value of -1 indicates not an editable line
 std::vector<size_t> lineLengths;
 
 // Displays desired text line from file in target row.
 // Note that this method moves the cursor.
 void displayLine(int fileLineNum, int displayRow, Buffer* b) {
     // Get line from buffer in memory
-    std::string line = b->getLine(fileLineNum);
-    /// TODO: Limit number of characters according to COLS?
-    mvaddstr(displayRow, 0, line.c_str());
-    size_t len = line.length();
-    if (len > 0 && line.back() == '\n') len--;
-    // Update line lengths table with newly loaded line (exclude newline character)
-    lineLengths.insert(lineLengths.begin() + displayRow - 1, len);
+    std::optional<std::string> line = b->getLine(fileLineNum);
+    if (line.has_value()) {
+        /// TODO: Limit number of characters according to COLS?
+        mvaddstr(displayRow, 0, line->c_str());
+        size_t len = line->length();
+        if (len > 0 && line->back() == '\n') len--;
+        // Update line lengths table with newly loaded line (exclude newline character)
+        lineLengths.insert(lineLengths.begin() + displayRow - 1, len);
+    } else {
+        lineLengths.insert(lineLengths.begin() + displayRow - 1, -1);
+    }
 }
 
 // Cleanup for terminating application.
@@ -40,7 +45,8 @@ void dumpAndExit(std::string msg) {
     endwin();
     if (DEBUG)
         std::cout << debugLog.str();
-    std::cout << msg << std::endl;
+    if (!msg.empty())
+        std::cout << msg << std::endl;
 }
 
 int main (int argc, char* argv[]) {
@@ -163,7 +169,7 @@ int main (int argc, char* argv[]) {
                 curs_set(1);
                 break;
             case KEY_DOWN:
-                if (row == b->getNumLines())
+                if (lineLengths[row] == -1)
                     break;
                 if (row == LINES - 2) {
                     curs_set(0); // Hide cursor during operations to avoid flickering

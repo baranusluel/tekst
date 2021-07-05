@@ -6,6 +6,7 @@
 			"label": "C/C++: g++.exe build active file",
 			"command": "C:\\msys64\\mingw64\\bin\\g++.exe",
 			"args": [
+				"-std=c++17",
 				"-IC:\\PDCurses-3.9",
 				"-g",
 				"${workspaceFolder}\\*.cpp",
@@ -27,6 +28,7 @@
 			"label": "C/C++: g++ build active file",
 			"command": "/usr/bin/g++",
 			"args": [
+				"-std=c++17",
 				"-g",
 				"${workspaceFolder}/*.cpp",
 				"-o",

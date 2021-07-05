@@ -29,7 +29,6 @@ ArrayBuffer::ArrayBuffer(char* filename) {
             if (fileMemory.back() == '\r')
                 fileMemory.pop_back();
             fileMemory.push_back('\n'); // getline() removes original \n
-            numLines++;
         }
 
         fileStream.close();
@@ -63,7 +62,7 @@ void ArrayBuffer::getLineBounds(uint lineNum, size_t* beginP, size_t* endP) {
     *endP = end;
 }
 
-std::string ArrayBuffer::getLine(uint lineNum) {
+std::optional<std::string> ArrayBuffer::getLine(uint lineNum) {
     // Get n-th line from text file's representation in memory.
     // Since stored as a contiguous array, have to count delimiters
     // which is inefficient but is an intrinsic weakness of this naive
@@ -71,8 +70,10 @@ std::string ArrayBuffer::getLine(uint lineNum) {
 
     size_t begin, end;
     getLineBounds(lineNum, &begin, &end);
-    return begin != std::string::npos
-        ? fileMemory.substr(begin, end - begin + 1) : "";
+    if (begin == std::string::npos)
+        return {};
+    else
+        return fileMemory.substr(begin, end - begin + 1);
 }
 
 // Writes to file from string in memory
@@ -93,11 +94,6 @@ void ArrayBuffer::delChar(int line, int col) {
     if (col > end - begin || begin + col >= fileMemory.length())
         return;
     size_t charPos = begin + col;
-    
-    char ch = fileMemory[charPos];
-    if (ch == '\n')
-        numLines--;
-
     // Delete single character at given position
     fileMemory.erase(charPos, 1);
 }
@@ -111,11 +107,4 @@ void ArrayBuffer::insertChar(char c, int line, int col) {
         return;
     // Insert character, shifting everything afterwards
     fileMemory.insert(fileMemory.begin() + begin + col, c);
-
-    if (c == '\n')
-        numLines++;
-}
-
-uint ArrayBuffer::getNumLines() {
-    return numLines;
 }
