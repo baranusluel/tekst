@@ -10,7 +10,7 @@
 #include <optional>
 #include <string>
 
-enum BufferType { ArrayBufferType };
+enum BufferType { ArrayBufferType, ArrayArrayBufferType };
 
 class Buffer {
     public:
@@ -22,6 +22,7 @@ class Buffer {
         // Static factory method for instantiating Buffer objects
         static std::unique_ptr<Buffer> createBuffer(BufferType, char* filename);
         static std::string bufferTypeToString(BufferType);
+        static BufferType bufferTypeFromString(std::string);
 
         // Name of file the buffer uses.
         // Non-const because this could change in a save-as.

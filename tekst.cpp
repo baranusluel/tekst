@@ -8,10 +8,6 @@
 #include "Buffer.h"
 #include "Utils.h"
 
-// Flags
-/// TODO: Add cmd argument for debug flag
-#define DEBUG 1
-
 // While in curses terminal mode can't print to std::cout so keeping
 // a tmp stream and printing at termination.
 // Variable is extern declared in Utils.h for global usage.
@@ -263,19 +259,41 @@ void insertCharAtCursor(int& scrollOffset, Buffer* b, int& row, int& col, int& c
     }
 }
 
+char* getCmdOption(char** begin, char** end, const std::string& option)
+{
+    char** itr = std::find(begin, end, option);
+    if (itr != end && ++itr != end)
+    {
+        return *itr;
+    }
+    return 0;
+}
+
+bool cmdOptionExists(char** begin, char** end, const std::string& option)
+{
+    return std::find(begin, end, option) != end;
+}
+
 int main(int argc, char* argv[]) {
-    if (argc != 2) {
-        std::cout << "tekst <filename>" << std::endl;
+    // Parsing command-line arguments
+    if (argc < 2) {
+        std::cout << "tekst <filename> [-d] [-b BufferType]" << std::endl;
         return 0;
     }
-    debugLog << "Opening file: " << argv[1] << std::endl;
-    
+    char* filename = argv[1];
+    debugLog << "Opening file: " << filename << std::endl;
+    bool DEBUG = cmdOptionExists(argv, argv + argc, "-d");
+    BufferType bufferType;
+    char* bufferTypeStr = getCmdOption(argv, argv + argc, "-b");
+    if (bufferTypeStr)
+        bufferType = Buffer::bufferTypeFromString(bufferTypeStr);
+    else
+        bufferType = BufferType::ArrayBufferType;
+
     std::unique_ptr<Buffer> b; // Owned reference to text buffer
-    /// TODO: Add cmd argument for buffer type
-    BufferType bType = static_cast<BufferType>(0);
-    debugLog << "Buffer type: " << Buffer::bufferTypeToString(bType) << std::endl;
+    debugLog << "Buffer type: " << Buffer::bufferTypeToString(bufferType) << std::endl;
     try {
-        b = Buffer::createBuffer(bType, argv[1]);
+        b = Buffer::createBuffer(bufferType, filename);
     } catch (std::string msg) {
         if (DEBUG)
             std::cout << debugLog.str();

@@ -24,10 +24,10 @@ ArrayBuffer::ArrayBuffer(char* filename) {
         // Read file line by line and append to array in memory.
         std::string line;
         while (getline(fileStream, line)) {
-            fileMemory.insert(fileMemory.end(), line.begin(), line.end());
             // Remove carriage returns. tekst uses LF, not CRLF, for simplicity.
-            if (fileMemory.back() == '\r')
-                fileMemory.pop_back();
+            if (line.back() == '\r')
+                line.pop_back();
+            fileMemory.insert(fileMemory.end(), line.begin(), line.end());
             fileMemory.push_back('\n'); // getline() removes original \n
         }
 
