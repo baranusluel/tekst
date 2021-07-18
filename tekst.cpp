@@ -2,6 +2,7 @@
 #include <curses.h>
 #include <iostream>
 #include <optional>
+#include <signal.h>
 #include <string>
 #include <vector>
 #include "Buffer.h"
@@ -20,16 +21,22 @@ std::ostringstream debugLog;
 #define ctrl(x) ((x) & 0x1f)
 // Number of lines in text edit region (excludes header and footer)
 #define LINES_TXT LINES - 2
-#define COLS_TXT COLS - 3
+#define COLS_TXT COLS - 4
 
 // Table of lines / strings that are currently within the editor's view.
 // This is the viewer's text memory, not to be confused with Buffer's complete text memory.
 // Lines out of range have an empty optional.
 std::vector<std::optional<std::string>> linesInView;
 
+// Curses windows for specific regions of the UI.
+WINDOW* txtW; // Where textfile contents are displayed and edited
+WINDOW* headW; // Top margin of UI
+WINDOW* footW; // Bottom margin of UI
+WINDOW* lineNumW; // Left margin of UI
+
 // Displays desired text line from file in target row.
 // Note that this method moves the cursor.
-void displayLineFromBuffer(WINDOW* win, int fileLineNum, int displayRow, Buffer* b) {
+void displayLineFromBuffer(int fileLineNum, int displayRow, Buffer* b) {
     // Get line from buffer in memory
     std::optional<std::string> line = b->getLine(fileLineNum);    
     if (line.has_value()) {
@@ -38,10 +45,10 @@ void displayLineFromBuffer(WINDOW* win, int fileLineNum, int displayRow, Buffer*
         // the newline when printing or else curses will shift lines up and add blank line.
         bool hasNewline = line->length() > 0 && line->back() == '\n';
         if (displayRow == LINES_TXT - 1 && hasNewline) {
-            mvwaddstr(win, displayRow, 0,
+            mvwaddstr(txtW, displayRow, 0,
                 line->substr(0, line->length() - 1).c_str());
         } else {
-            mvwaddstr(win, displayRow, 0, line->c_str());
+            mvwaddstr(txtW, displayRow, 0, line->c_str());
         }
         
     }
@@ -51,21 +58,62 @@ void displayLineFromBuffer(WINDOW* win, int fileLineNum, int displayRow, Buffer*
 
 /// TODO: Handle inserting & deleting EOL cases with this method
 /// instead of above for efficiency
-void displayLineFromCache(WINDOW* win, int row) {
+void displayLineFromCache(int row) {
     // Get line from view memory
     if (linesInView[row].has_value()) {
-        mvwaddstr(win, row, 0, linesInView[row]->c_str());
+        mvwaddstr(txtW, row, 0, linesInView[row]->c_str());
     }
 }
 
-void scrollLineNumsUp(WINDOW* lineNumW, const int& scrollOffset) {
+void initDraw(Buffer* b, int scrollOffset) {
+    waddstr(headW, "tekst by Baran Usluel\n");
+    wnoutrefresh(headW);
+
+    waddstr(footW, b->filename.c_str());
+    wnoutrefresh(footW);
+
+    for (int i = 0; i < LINES_TXT; ++i) {
+        wmove(lineNumW, i, 0);
+        wprintw(lineNumW, "%u", i + 1 + scrollOffset);
+    }
+    wnoutrefresh(lineNumW);
+
+    // Display text from read file in visible rows
+    for (int i = 0; i < LINES_TXT; ++i) {
+        displayLineFromBuffer(i + scrollOffset, i, b);
+    }
+    // wrefresh = wnoutrefresh + doupdate
+    // When refreshing multiple windows, only doupdate once for efficiency
+    wnoutrefresh(txtW);
+    doupdate();
+}
+
+/// TODO: Optimize this by not fully clearing and redrawing
+void handleResize(Buffer* b, int scrollOffset) {
+    // Clear all windows
+    wclear(txtW);
+    wclear(headW);
+    wclear(footW);
+    wclear(lineNumW);
+    // Resize all windows in memory
+    wresize(txtW, LINES_TXT, COLS_TXT);
+    wresize(headW, 1, COLS);
+    wresize(footW, 1, COLS);
+    wresize(lineNumW, LINES_TXT, 4);
+    // Move footer
+    mvwin(footW, LINES - 1, 0);
+    // Redraw all contents
+    initDraw(b, scrollOffset);
+}
+
+void scrollLineNumsUp(const int& scrollOffset) {
     wscrl(lineNumW, 1);
     wmove(lineNumW, LINES_TXT - 1, 0);
     wprintw(lineNumW, "%u", LINES_TXT + scrollOffset);
     wnoutrefresh(lineNumW);
 }
 
-void scrollLineNumsDown(WINDOW* lineNumW, const int& scrollOffset) {
+void scrollLineNumsDown(const int& scrollOffset) {
     wscrl(lineNumW, -1);
     wmove(lineNumW, 0, 0);
     wprintw(lineNumW, "%u", scrollOffset + 1);
@@ -73,7 +121,7 @@ void scrollLineNumsDown(WINDOW* lineNumW, const int& scrollOffset) {
 }
 
 // Moves lines in text view up due to user scrolling downwards
-void scrollTextViewUp(WINDOW* txtW, WINDOW* lineNumW, int& scrollOffset, Buffer* b, bool loadBottomLine) {
+void scrollTextViewUp(int& scrollOffset, Buffer* b, bool loadBottomLine) {
     curs_set(0); // Hide cursor during operations to avoid flickering
     wscrl(txtW, 1);
     scrollOffset++;
@@ -81,13 +129,13 @@ void scrollTextViewUp(WINDOW* txtW, WINDOW* lineNumW, int& scrollOffset, Buffer*
     linesInView.erase(linesInView.begin());
     // Load text to display in the new scrolled line.
     if (loadBottomLine)
-        displayLineFromBuffer(txtW, LINES_TXT - 1 + scrollOffset, LINES_TXT - 1, b);
-    scrollLineNumsUp(lineNumW, scrollOffset);
+        displayLineFromBuffer(LINES_TXT - 1 + scrollOffset, LINES_TXT - 1, b);
+    scrollLineNumsUp(scrollOffset);
     curs_set(1);
 }
 
 // Moves lines in text view down due to user scrolling upwards
-void scrollTextViewDown(WINDOW* txtW, WINDOW* lineNumW, int& scrollOffset, Buffer* b, bool loadTopLine) {
+void scrollTextViewDown(int& scrollOffset, Buffer* b, bool loadTopLine) {
     curs_set(0); // Hide cursor during operations to avoid flickering
     wscrl(txtW, -1);
     scrollOffset--;
@@ -95,17 +143,17 @@ void scrollTextViewDown(WINDOW* txtW, WINDOW* lineNumW, int& scrollOffset, Buffe
     linesInView.erase(linesInView.end() - 1);
     // Load text to display in the new scrolled line.
     if (loadTopLine)
-        displayLineFromBuffer(txtW, scrollOffset, 0, b);
-    scrollLineNumsDown(lineNumW, scrollOffset);
+        displayLineFromBuffer(scrollOffset, 0, b);
+    scrollLineNumsDown(scrollOffset);
     curs_set(1);
 }
 
-bool moveCursorUp(WINDOW* txtW, WINDOW* lineNumW, int& scrollOffset, Buffer* b, int& row, int& col, int& colGoal) {
+bool moveCursorUp(int& scrollOffset, Buffer* b, int& row, int& col, int& colGoal) {
     if (row == 0) {
         // If no more lines above, stop
         if (scrollOffset <= 0)
             return false;
-        scrollTextViewDown(txtW, lineNumW, scrollOffset, b, true);
+        scrollTextViewDown(scrollOffset, b, true);
     } else {
         row--;
     }
@@ -113,14 +161,14 @@ bool moveCursorUp(WINDOW* txtW, WINDOW* lineNumW, int& scrollOffset, Buffer* b, 
     return true;
 }
 
-bool moveCursorDown(WINDOW* txtW, WINDOW* lineNumW, int& scrollOffset, Buffer* b, int& row, int& col, int& colGoal) {
+bool moveCursorDown(int& scrollOffset, Buffer* b, int& row, int& col, int& colGoal) {
     if (row == LINES_TXT - 1) {
         // If there is no accessible next line, don't move cursor down.
         // Can't check next line directly because not loaded into view memory yet,
         // so instead check if there is newline at the end of this line.
         if (linesInView[row]->back() != '\n')
             return false;
-        scrollTextViewUp(txtW, lineNumW, scrollOffset, b, true);
+        scrollTextViewUp(scrollOffset, b, true);
     } else {
         // If there is no accessible next line, don't move cursor down
         if (!linesInView[row + 1].has_value())
@@ -131,11 +179,11 @@ bool moveCursorDown(WINDOW* txtW, WINDOW* lineNumW, int& scrollOffset, Buffer* b
     return true;
 }
 
-bool moveCursorLeft(WINDOW* txtW, WINDOW* lineNumW, int& scrollOffset, Buffer* b, int& row, int& col, int& colGoal) {
+bool moveCursorLeft(int& scrollOffset, Buffer* b, int& row, int& col, int& colGoal) {
     // If at start of line and moving left, try to go to end of previous line
     if (col == 0) {
         // If move up success, then go to end
-        if (moveCursorUp(txtW, lineNumW, scrollOffset, b, row, col, colGoal))
+        if (moveCursorUp(scrollOffset, b, row, col, colGoal))
             wmove(txtW, row, colGoal = col = getCleanStrLen(linesInView[row].value()));
         else
             return false;
@@ -144,11 +192,11 @@ bool moveCursorLeft(WINDOW* txtW, WINDOW* lineNumW, int& scrollOffset, Buffer* b
     return true;
 }
 
-bool moveCursorRight(WINDOW* txtW, WINDOW* lineNumW, int& scrollOffset, Buffer* b, int& row, int& col, int& colGoal) {
+bool moveCursorRight(int& scrollOffset, Buffer* b, int& row, int& col, int& colGoal) {
     // If at end of line and moving right, try to go to start of next line
     if (col == getCleanStrLen(linesInView[row].value())) {
         // If move down success, then go to start
-        if (moveCursorDown(txtW, lineNumW, scrollOffset, b, row, col, colGoal))
+        if (moveCursorDown(scrollOffset, b, row, col, colGoal))
             wmove(txtW, row, colGoal = col = 0);
         else
             return false;
@@ -157,7 +205,7 @@ bool moveCursorRight(WINDOW* txtW, WINDOW* lineNumW, int& scrollOffset, Buffer* 
     return true;
 }
 
-void delCharAtCursor(WINDOW* txtW, int& scrollOffset, Buffer* b, int& row, int& col) {
+void delCharAtCursor(int& scrollOffset, Buffer* b, int& row, int& col) {
     b->delChar(row + scrollOffset, col);
     wdelch(txtW);
     // If cursor is at end of line, deleting linebreak
@@ -169,9 +217,9 @@ void delCharAtCursor(WINDOW* txtW, int& scrollOffset, Buffer* b, int& row, int& 
         // Delete entry for the deleted row from linesInView
         linesInView.erase(linesInView.begin() + row);
         // Display updated (concatenated) line
-        displayLineFromBuffer(txtW, scrollOffset + row, row, b);
+        displayLineFromBuffer(scrollOffset + row, row, b);
         // Display line that scrolled into view from bottom
-        displayLineFromBuffer(txtW, LINES_TXT - 1 + scrollOffset, LINES_TXT - 1, b);
+        displayLineFromBuffer(LINES_TXT - 1 + scrollOffset, LINES_TXT - 1, b);
         wmove(txtW, row, col);
         curs_set(1);
     } else {
@@ -180,7 +228,7 @@ void delCharAtCursor(WINDOW* txtW, int& scrollOffset, Buffer* b, int& row, int& 
     }
 }
 
-void insertCharAtCursor(WINDOW* txtW, WINDOW* lineNumW, int& scrollOffset, Buffer* b, int& row, int& col, int& colGoal, int ch) {
+void insertCharAtCursor(int& scrollOffset, Buffer* b, int& row, int& col, int& colGoal, int ch) {
     /// CONSIDER: Splitting up this function for \n and other chars
     winsch(txtW, ch); // Insert typed character on screen
     b->insertChar(ch, row + scrollOffset, col); // Insert character in buffer
@@ -196,14 +244,14 @@ void insertCharAtCursor(WINDOW* txtW, WINDOW* lineNumW, int& scrollOffset, Buffe
             // Delete entry from start of table because only tracking visible lines
             linesInView.erase(linesInView.begin());
             // Explicitly scroll line numbers
-            scrollLineNumsUp(lineNumW, scrollOffset);
+            scrollLineNumsUp(scrollOffset);
         } else {
             wmove(txtW, ++row, col); // Move to next row before inserting new line
             winsertln(txtW); // Add new empty line on screen above cursor, shifting rest down
             // Delete entry from end of table because only tracking visible lines
             linesInView.erase(linesInView.end() - 1);
         }
-        displayLineFromBuffer(txtW, scrollOffset + row, row, b); // Text to go in new line
+        displayLineFromBuffer(scrollOffset + row, row, b); // Text to go in new line
         // Move cursor to start of new line
         wmove(txtW, row, colGoal = col = 0);
         curs_set(1);
@@ -215,7 +263,7 @@ void insertCharAtCursor(WINDOW* txtW, WINDOW* lineNumW, int& scrollOffset, Buffe
     }
 }
 
-int main (int argc, char* argv[]) {
+int main(int argc, char* argv[]) {
     if (argc != 2) {
         std::cout << "tekst <filename>" << std::endl;
         return 0;
@@ -240,31 +288,23 @@ int main (int argc, char* argv[]) {
     raw();
     noecho();
 
-    // Create text edit region window
-    WINDOW* txtW = newwin(LINES_TXT, COLS_TXT, 1, 3);
+    // Initialize text edit region window
+    txtW = newwin(LINES_TXT, COLS_TXT, 1, 4);
     keypad(txtW, TRUE);
     // Enable vertical scrolling
     scrollok(txtW, TRUE);
 
-    // Draw window chrome
-    WINDOW* headW = newwin(1, COLS, 0, 0);
+    // Initialize header & footer windows
+    headW = newwin(1, COLS, 0, 0);
     wattron(headW, A_BOLD);
     wattron(headW, A_STANDOUT);
-    waddstr(headW, "tekst by Baran Usluel\n");
-    wnoutrefresh(headW);
-    WINDOW* footW = newwin(1, COLS, LINES-1, 0);
+    footW = newwin(1, COLS, LINES-1, 0);
     wattron(footW, A_BOLD);
-    waddstr(footW, argv[1]);
-    wnoutrefresh(footW);
 
-    // Draw line numbers
-    WINDOW* lineNumW = newwin(LINES_TXT, 3, 1, 0);
+    // Initialize line number window
+    lineNumW = newwin(LINES_TXT, 4, 1, 0);
     scrollok(lineNumW, TRUE);
-    for (int i = 0; i < LINES_TXT; ++i) {
-        wmove(lineNumW, i, 0);
-        wprintw(lineNumW, "%u", i + 1);
-    }
-    wnoutrefresh(lineNumW);
+    wattron(lineNumW, A_DIM);
 
     int scrollOffset = 0; // Amount text window was scrolled by (positive = downwards)
     int row = 0, col = 0; // Position of cursor in text window
@@ -272,17 +312,11 @@ int main (int argc, char* argv[]) {
     // cursor position across varying line lengths)
     int colGoal = 0;
 
-    // Display text from read file in visible rows
-    for (int i = 0; i < LINES_TXT; ++i) {
-        displayLineFromBuffer(txtW, i, i, b.get());
-    }
+    // Draw contents of all windows
+    initDraw(b.get(), scrollOffset);
 
     // Move cursor to start of file
     wmove(txtW, row, col);
-    // wrefresh = wnoutrefresh + doupdate
-    // When refreshing multiple windows, only doupdate once for efficiency
-    wnoutrefresh(txtW);
-    doupdate();
 
     // Whether program is terminated early due to an error
     bool err = false;
@@ -294,23 +328,23 @@ int main (int argc, char* argv[]) {
             /// TODO: Add page up/down key cases
             case KEY_BACKSPACE:
                 // If able to move left (or up), do it and delete char
-                if (moveCursorLeft(txtW, lineNumW, scrollOffset, b.get(), row, col, colGoal))
-                    delCharAtCursor(txtW, scrollOffset, b.get(), row, col);
+                if (moveCursorLeft(scrollOffset, b.get(), row, col, colGoal))
+                    delCharAtCursor(scrollOffset, b.get(), row, col);
                 break;
             case KEY_DC:
-                delCharAtCursor(txtW, scrollOffset, b.get(), row, col);
+                delCharAtCursor(scrollOffset, b.get(), row, col);
                 break;
             case KEY_LEFT:
-                moveCursorLeft(txtW, lineNumW, scrollOffset, b.get(), row, col, colGoal);
+                moveCursorLeft(scrollOffset, b.get(), row, col, colGoal);
                 break;
             case KEY_RIGHT:
-                moveCursorRight(txtW, lineNumW, scrollOffset, b.get(), row, col, colGoal);
+                moveCursorRight(scrollOffset, b.get(), row, col, colGoal);
                 break;
             case KEY_UP:
-                moveCursorUp(txtW, lineNumW, scrollOffset, b.get(), row, col, colGoal);
+                moveCursorUp(scrollOffset, b.get(), row, col, colGoal);
                 break;
             case KEY_DOWN:
-                moveCursorDown(txtW, lineNumW, scrollOffset, b.get(), row, col, colGoal);
+                moveCursorDown(scrollOffset, b.get(), row, col, colGoal);
                 break;
             case KEY_HOME:
                 wmove(txtW, row, colGoal = col = 0);
@@ -326,8 +360,12 @@ int main (int argc, char* argv[]) {
                     debugLog << msg << std::endl;
                 }
                 break;
+            case KEY_RESIZE:
+                handleResize(b.get(), scrollOffset);
+                wmove(txtW, row, col);
+                break;
             default:
-                insertCharAtCursor(txtW, lineNumW, scrollOffset, b.get(), row, col, colGoal, ch);
+                insertCharAtCursor(scrollOffset, b.get(), row, col, colGoal, ch);
         }
         wrefresh(txtW);
         ch = wgetch(txtW);
